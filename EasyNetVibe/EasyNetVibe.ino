@@ -133,7 +133,8 @@ void showProgressMessage(const char* message) {
   static auto cursor = 0;
   const auto width = StickCP2.Display.width();
   const auto height = StickCP2.Display.fontHeight();
-  const auto cursorY = (cursor * height) % StickCP2.Display.height();
+  const int maxCursorInScreen = StickCP2.Display.height() / height;
+  const auto cursorY = (cursor % maxCursorInScreen) * height;
 
   Serial.println(message);
   StickCP2.Display.setCursor(0, cursorY);
@@ -143,7 +144,7 @@ void showProgressMessage(const char* message) {
   cursor++;
 }
 
-int brithness = 10;
+int brithness = 20;
 
 void deviceOff() {
   vibrate(0);
