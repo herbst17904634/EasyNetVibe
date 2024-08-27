@@ -5,7 +5,8 @@
 #include <Wire.h>
 #include <Haptic_Driver.h>
 #include <esp32-hal-ledc.h>
-#include <M5StickCPlus2.h>
+// #include <M5StickCPlus2.h>
+#include <M5Unified.h>
 #include <M5GFX.h>
 
 Haptic_Driver hapDrive;
@@ -19,9 +20,9 @@ const int COUNT_LOW = (((1.0 / 20) * 65536) + 0.5);
 const int COUNT_HIGH = (((2.0 / 20) * 65536) + 0.5);
 const int TIMER_WIDTH = 16;
 
-BLEServer* pServer = nullptr;
-BLECharacteristic* pTxCharacteristic = nullptr;
-BLECharacteristic* pRxCharacteristic = nullptr;
+BLEServer *pServer = nullptr;
+BLECharacteristic *pTxCharacteristic = nullptr;
+BLECharacteristic *pRxCharacteristic = nullptr;
 String bleAddress = "30c6f743754e";  // CONFIGURATION: < Use the real device BLE address here.
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
@@ -33,12 +34,12 @@ const auto CHARACTERISTIC_RX_UUID = "53300002-0023-4bd4-bbd5-a6920e4c5653";
 const auto CHARACTERISTIC_TX_UUID = "53300003-0023-4bd4-bbd5-a6920e4c5653";
 
 class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer* pServer) {
+  void onConnect(BLEServer *pServer) {
     deviceConnected = true;
     BLEDevice::startAdvertising();
   };
 
-  void onDisconnect(BLEServer* pServer) {
+  void onDisconnect(BLEServer *pServer) {
     deviceConnected = false;
   }
 };
@@ -54,7 +55,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     Serial.write(messageBuf, len);
     Serial.println();
   }
-  void onWrite(BLECharacteristic* pCharacteristic) {
+  void onWrite(BLECharacteristic *pCharacteristic) {
     assert(pCharacteristic == pRxCharacteristic);
     std::string rxValue = pRxCharacteristic->getValue();
 
@@ -69,7 +70,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     if (rxValue == "DeviceType;") {
       response("Z:ED:c857339ba2a6;");
     } else if (rxValue == "Battery;") {
-      auto batteryLevel = StickCP2.Power.getBatteryLevel();
+      auto batteryLevel = M5.Power.getBatteryLevel();
       auto batteryLevelStr = String(batteryLevel) + ";";
       response(batteryLevelStr);
     } else if (rxValue == "PowerOff;") {
@@ -98,9 +99,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-M5Canvas canvas(&StickCP2.Display);
+M5Canvas canvas(&M5.Display);
 
-void drawBarGraph(const int x, const int y, const int graphPosOffset, const int level, const int maxLevel, const char* label) {
+void drawBarGraph(const int x, const int y, const int graphPosOffset, const int level, const int maxLevel, const char *label) {
   const auto barMaxWidth = canvas.width() - graphPosOffset;
   const auto padding = 6;
   const auto barHeight = canvas.fontHeight() - padding;
@@ -113,8 +114,17 @@ void drawBarGraph(const int x, const int y, const int graphPosOffset, const int 
   canvas.fillRect(x + graphPosOffset, y + padding / 2, barWidth, barHeight, TFT_MAGENTA);
 }
 
+int batteryLevel = 0;
+
 void showValues() {
-  const auto level = StickCP2.Power.getBatteryLevel();
+  auto cursor = 0;
+  // M5StickC Plus2 does not get the correct battery voltage when using the radio function.
+  if(M5.getBoard()!=m5::board_t::board_M5StickCPlus2){
+    batteryLevel = M5.Power.getBatteryLevel();
+  }
+  const auto volt = M5.Power.getBatteryVoltage();
+  const auto current = M5.Power.getBatteryCurrent();
+  const auto isCharging = M5.Power.isCharging();
 
   canvas.fillSprite(TFT_BLACK);
   canvas.setCursor(0, 0);
@@ -122,25 +132,27 @@ void showValues() {
   const auto height = canvas.fontHeight();
   const auto width = canvas.fontWidth();
   const auto graphPosOffset = width * 9;
-  drawBarGraph(0, 0, graphPosOffset, level, 100, "BAT");
-  drawBarGraph(0, height, graphPosOffset, vibration, 20, "V1");
-  StickCP2.Display.startWrite();
+  if (M5.Power.getType() != m5::Power_Class::pmic_t::pmic_unknown) {
+    drawBarGraph(0, (cursor++) * height, graphPosOffset, batteryLevel, 100, "BAT");
+  }
+  drawBarGraph(0, (cursor++) * height, graphPosOffset, vibration, 20, "V1");
+  M5.Display.startWrite();
   canvas.pushSprite(0, 0);
-  StickCP2.Display.endWrite();
+  M5.Display.endWrite();
 }
 
-void showProgressMessage(const char* message) {
+void showProgressMessage(const std::string message) {
   static auto cursor = 0;
-  const auto width = StickCP2.Display.width();
-  const auto height = StickCP2.Display.fontHeight();
-  const int maxCursorInScreen = StickCP2.Display.height() / height;
+  const auto width = M5.Display.width();
+  const auto height = M5.Display.fontHeight();
+  const int maxCursorInScreen = M5.Display.height() / height;
   const auto cursorY = (cursor % maxCursorInScreen) * height;
 
-  Serial.println(message);
-  StickCP2.Display.setCursor(0, cursorY);
-  StickCP2.Display.fillRect(0, cursorY, width, height, TFT_BLACK);
-  StickCP2.Display.printf("%d:", cursor);
-  StickCP2.Display.println(message);
+  Serial.println(message.c_str());
+  M5.Display.setCursor(0, cursorY);
+  M5.Display.fillRect(0, cursorY, width, height, TFT_BLACK);
+  M5.Display.printf("%d:", cursor);
+  M5.Display.println(message.c_str());
   cursor++;
 }
 
@@ -158,22 +170,24 @@ void setup() {
   Serial.begin(115200);
 
   auto cfg = M5.config();
-  StickCP2.begin(cfg);
+  M5.begin(cfg);
+  const auto model = M5.getBoard();
 
-  StickCP2.Display.begin();
-  StickCP2.Display.fillScreen(TFT_BLACK);
-  StickCP2.Display.setRotation(1);
+  M5.Display.begin();
+  M5.Display.fillScreen(TFT_BLACK);
+  M5.Display.setRotation(1);
   canvas.setTextFont(4);
   canvas.createSprite(
-    StickCP2.Display.width(),
-    StickCP2.Display.height());
+    M5.Display.width(),
+    M5.Display.height());
 
-  StickCP2.Display.setTextFont(2);
-  StickCP2.Display.setTextColor(TFT_WHITE);
-  StickCP2.Display.setCursor(0, 0);
-  StickCP2.Display.println("STP: Begin");
-
-
+  M5.Display.setTextFont(2);
+  M5.Display.setTextColor(TFT_WHITE);
+  M5.Display.setCursor(0, 0);
+  delay(1000);
+  showProgressMessage("STP: Begin");
+  showProgressMessage("STP: model " + std::to_string(model));
+  batteryLevel = M5.Power.getBatteryLevel();
   Wire.begin();
   if (!hapDrive.begin())
     showProgressMessage("QHD: Can't comm.");
@@ -204,7 +218,7 @@ void setup() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
-  BLEService* pService = pServer->createService(SERVICE_UUID);
+  BLEService *pService = pServer->createService(SERVICE_UUID);
 
   pTxCharacteristic = pService->createCharacteristic(
     CHARACTERISTIC_TX_UUID,
@@ -220,7 +234,7 @@ void setup() {
   pService->start();
 
   showProgressMessage("BLE: Start adv.");
-  BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(false);
   pAdvertising->setMinPreferred(0x0);
@@ -228,7 +242,7 @@ void setup() {
   isBlinkLed = true;
 
   showProgressMessage("STP: Done");
-  StickCP2.Display.setBrightness(brithness);
+  M5.Display.setBrightness(brithness);
 }
 
 void loop() {
@@ -252,16 +266,16 @@ void loop() {
     showValues();
   }
 
-  StickCP2.update();
-  if (StickCP2.BtnA.wasPressed()) {
+  M5.update();
+  if (M5.BtnA.wasPressed()) {
     static auto displaySwitch = true;
     displaySwitch = !displaySwitch;
     if (displaySwitch) {
-      StickCP2.Display.wakeup();
-      StickCP2.Display.setBrightness(brithness);
+      M5.Display.wakeup();
+      M5.Display.setBrightness(brithness);
     } else {
-      StickCP2.Display.setBrightness(0);
-      StickCP2.Display.sleep();
+      M5.Display.setBrightness(0);
+      M5.Display.sleep();
     }
   }
 
@@ -269,13 +283,13 @@ void loop() {
     const int sec = millis() / 1000;
     const auto _ledState = sec % 2;
     if (_ledState != ledState) {
-      StickCP2.Power.setLed(ledState);
+      M5.Power.setLed(ledState);
       ledState = _ledState;
     }
   } else {
-    if (ledState) {
+    if (ledState != 0) {
       ledState = 0;
-      StickCP2.Power.setLed(ledState);
+      M5.Power.setLed(ledState);
     }
   }
 }
