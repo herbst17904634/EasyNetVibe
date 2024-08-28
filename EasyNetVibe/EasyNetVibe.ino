@@ -27,6 +27,7 @@ String bleAddress = "30c6f743754e";  // CONFIGURATION: < Use the real device BLE
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 int vibration = 0;
+int batteryLevel = 0;
 
 // https://docs.buttplug.io/docs/stpihkal/protocols/lovense
 const auto SERVICE_UUID = "53300001-0023-4bd4-bbd5-a6920e4c5653";
@@ -70,7 +71,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     if (rxValue == "DeviceType;") {
       response("Z:ED:c857339ba2a6;");
     } else if (rxValue == "Battery;") {
-      auto batteryLevel = M5.Power.getBatteryLevel();
+      if (M5.getBoard() != m5::board_t::board_M5StickCPlus2) {
+        batteryLevel = M5.Power.getBatteryLevel();
+      }
       auto batteryLevelStr = String(batteryLevel) + ";";
       response(batteryLevelStr);
     } else if (rxValue == "PowerOff;") {
@@ -114,12 +117,10 @@ void drawBarGraph(const int x, const int y, const int graphPosOffset, const int 
   canvas.fillRect(x + graphPosOffset, y + padding / 2, barWidth, barHeight, TFT_MAGENTA);
 }
 
-int batteryLevel = 0;
-
 void showValues() {
   auto cursor = 0;
   // M5StickC Plus2 does not get the correct battery voltage when using the radio function.
-  if(M5.getBoard()!=m5::board_t::board_M5StickCPlus2){
+  if (M5.getBoard() != m5::board_t::board_M5StickCPlus2) {
     batteryLevel = M5.Power.getBatteryLevel();
   }
   const auto volt = M5.Power.getBatteryVoltage();
