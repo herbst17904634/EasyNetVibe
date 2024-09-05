@@ -158,6 +158,10 @@ void showProgressMessage(const std::string message) {
 }
 
 int brithness = 20;
+unsigned long displayLightingDuration = 10000;
+unsigned long lastUpdateMillis = 0;
+unsigned long lastDisplayMillis = 0;
+auto isLastDisplayOn = true;
 
 void deviceOff() {
   vibrate(0);
@@ -203,6 +207,7 @@ void setup() {
 
   showProgressMessage("QHD: Set I2C Op.");
   hapDrive.setOperationMode(DRO_MODE);
+  // hapDrive.setActuatorLRAfreq(160);
   hapDrive.setVibrate(0);
   showProgressMessage("QHD: Done");
 
@@ -267,22 +272,29 @@ void loop() {
     showValues();
   }
 
-  M5.update();
-  if (M5.BtnA.wasPressed()) {
-    static auto displaySwitch = true;
-    displaySwitch = !displaySwitch;
-    if (displaySwitch) {
-      M5.Display.wakeup();
-      M5.Display.setBrightness(brithness);
-    } else {
-      M5.Display.setBrightness(0);
-      M5.Display.sleep();
+  const int currentMillis = millis();
+
+  if (currentMillis - lastUpdateMillis > 500) {
+    lastUpdateMillis = currentMillis;
+    auto isDisplayOn = (currentMillis - lastDisplayMillis < displayLightingDuration) ? isLastDisplayOn : false;
+    M5.update();
+    isDisplayOn = (isDisplayOn == isLastDisplayOn) && (M5.BtnA.wasPressed() != isLastDisplayOn);
+
+    if (isDisplayOn != isLastDisplayOn) {
+      isLastDisplayOn = isDisplayOn;
+      if (isDisplayOn) {
+        lastDisplayMillis = currentMillis;
+        M5.Display.wakeup();
+        M5.Display.setBrightness(brithness);
+      } else {
+        M5.Display.setBrightness(0);
+        M5.Display.sleep();
+      }
     }
   }
 
   if (isBlinkLed) {
-    const int sec = millis() / 1000;
-    const auto _ledState = sec % 2;
+    const auto _ledState = (currentMillis / 1000) % 2;
     if (_ledState != ledState) {
       M5.Power.setLed(ledState);
       ledState = _ledState;
